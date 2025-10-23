@@ -4,12 +4,12 @@ import "./App.css";
 const API_BASE_URL = "http://localhost:5000";
 
 // =================================================================================
-// 1. HELPER & UTILITY COMPONENTS (DEFINED FIRST)
+// 1. HELPER & UTILITY COMPONENTS
 // =================================================================================
 const useIntersectionObserver = (options) => {
   const [ref, setRef] = useState(null);
+  const [isVisible, setIsVisible] = useState(false);
   useEffect(() => {
-    const currentRef = ref; // Capture ref value
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -19,18 +19,17 @@ const useIntersectionObserver = (options) => {
       },
       { threshold: 0.1, ...options }
     );
-
+    const currentRef = ref; // Capture ref value for cleanup
     if (currentRef) {
       observer.observe(currentRef);
     }
-
     return () => {
       if (currentRef) {
         observer.unobserve(currentRef);
       }
     };
   }, [ref, options]);
-  return [setRef];
+  return [setRef, isVisible]; // isVisible was unused, but let's keep it for the hook's correctness
 };
 
 const AnimatedSection = ({ children, delay = 0 }) => {
@@ -38,7 +37,7 @@ const AnimatedSection = ({ children, delay = 0 }) => {
   return (
     <div
       ref={ref}
-      className="scroll-animate"
+      className={`scroll-animate`}
       style={{ transitionDelay: `${delay}s` }}
     >
       {children}
@@ -84,41 +83,91 @@ const TransitionPage = ({ slogan }) => {
   );
 };
 
+const Captcha = ({ onCaptchaChange }) => {
+  const [captchaText, setCaptchaText] = useState("");
+  const canvasRef = useRef(null);
+  const generateCaptcha = useRef(() => {});
+  generateCaptcha.current = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let text = "";
+    for (let i = 0; i < 6; i++) {
+      text += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCaptchaText(text);
+    onCaptchaChange(text);
+  };
+  useEffect(() => {
+    generateCaptcha.current();
+  }, [onCaptchaChange]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#f3f4f6";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < captchaText.length; i++) {
+      const char = captchaText[i];
+      const fontSize = Math.random() * 10 + 20;
+      const angle = Math.random() * 0.6 - 0.3;
+      const x = 20 + i * 25;
+      const y = 30 + Math.random() * 10 - 5;
+      ctx.save();
+      ctx.font = `bold ${fontSize}px Inter`;
+      ctx.fillStyle = `hsl(${Math.random() * 30 + 220}, 30%, 40%)`;
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillText(char, 0, 0);
+      ctx.restore();
+    }
+  }, [captchaText]);
+  return (
+    <div className="captcha-container">
+      <canvas
+        ref={canvasRef}
+        width="180"
+        height="50"
+        className="captcha-canvas"
+      ></canvas>
+      <button
+        type="button"
+        onClick={() => generateCaptcha.current()}
+        className="captcha-refresh-btn"
+        title="Refresh CAPTCHA"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={1.5}
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M16.023 9.348h4.992v-.001a.75.75 0 01.75.75c0 .414-.336.75-.75.75h-4.992a2.25 2.25 0 01-2.25 2.25H6.38a2.25 2.25 0 00-2.25-2.25H3.879a.75.75 0 010-1.5h.251a2.25 2.25 0 012.25-2.25h1.5a2.25 2.25 0 012.25 2.25h.251a.75.75 0 01.75.75z"
+          />
+        </svg>
+      </button>
+    </div>
+  );
+};
+
 // =================================================================================
-// 2. AUTHENTICATION & DASHBOARD COMPONENTS
+// 2. AUTHENTICATION COMPONENTS
 // =================================================================================
 const LoginPage = ({ onLoginSuccess, onSwitchToSignup }) => {
-  // This is the full, unabridged component
-  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const behavioralData = useRef({
-    keyPressCount: 0,
-    pasteCount: 0,
-    errorCount: 0,
-    startTime: Date.now(),
-  });
-  const handleKeyDown = (e) => {
-    behavioralData.current.keyPressCount++;
-    if (["Backspace", "Delete"].includes(e.key))
-      behavioralData.current.errorCount++;
-  };
-  const handlePaste = () => {
-    behavioralData.current.pasteCount++;
-  };
-  const handleInputChange = (e) =>
-    setFormData({ ...formData, [e.target.name]: e.target.value });
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    const finalBehavioralData = {
-      ...behavioralData.current,
-      totalTimeSeconds: (Date.now() - behavioralData.current.startTime) / 1000,
-    };
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formData, behavioralData: finalBehavioralData }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -136,11 +185,8 @@ const LoginPage = ({ onLoginSuccess, onSwitchToSignup }) => {
           <label>Email</label>
           <input
             type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
           />
         </div>
@@ -148,11 +194,8 @@ const LoginPage = ({ onLoginSuccess, onSwitchToSignup }) => {
           <label>Password</label>
           <input
             type="password"
-            name="password"
-            value={formData.password}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
           />
         </div>
@@ -188,12 +231,223 @@ const LoginPage = ({ onLoginSuccess, onSwitchToSignup }) => {
 };
 
 const SignupPage = ({ onSignupSuccess, onSwitchToLogin }) => {
-  // This is the full, unabridged component
-  return <div>Signup Page Placeholder</div>;
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    aadhar: "",
+    pan: "",
+    age: "",
+    gender: "",
+    dob: "",
+    fatherName: "",
+    address: "",
+  });
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [generatedCaptcha, setGeneratedCaptcha] = useState("");
+  const [error, setError] = useState("");
+  const handleInputChange = (e) => {
+    let { name, value } = e.target;
+    if (name === "dob" && value) {
+      // value is YYYY-MM-DD
+      const [year, month, day] = value.split("-");
+      setFormData({ ...formData, [name]: `${day}/${month}/${year}` });
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
+  };
+  const dateForInput =
+    formData.dob && formData.dob.includes("/")
+      ? formData.dob.split("/").reverse().join("-")
+      : "";
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (captchaInput.toLowerCase() !== generatedCaptcha.toLowerCase()) {
+      setError("Invalid CAPTCHA. Please try again.");
+      return;
+    }
+
+    const dataToSend = { ...formData };
+    if (dataToSend.dob && !dataToSend.dob.includes("/")) {
+      const [year, month, day] = dataToSend.dob.split("-");
+      dataToSend.dob = `${day}/${month}/${year}`;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSend),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      alert("Signup successful! Please login.");
+      onSignupSuccess();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  return (
+    <>
+      <h3 style={{ marginTop: 0 }}>Create Your Account</h3>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Full Name</label>
+          <input
+            type="text"
+            name="fullName"
+            value={formData.fullName}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Father's Name</label>
+          <input
+            type="text"
+            name="fatherName"
+            value={formData.fatherName}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Email</label>
+          <input
+            type="email"
+            name="email"
+            value={formData.email}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Password</label>
+          <input
+            type="password"
+            name="password"
+            value={formData.password}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Address</label>
+          <input
+            type="text"
+            name="address"
+            value={formData.address}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Aadhar Number</label>
+          <input
+            type="text"
+            name="aadhar"
+            value={formData.aadhar}
+            onChange={handleInputChange}
+            required
+            pattern="\d{12}"
+            title="Enter a 12-digit Aadhar number"
+          />
+        </div>
+        <div className="form-group">
+          <label>PAN Card Number</label>
+          <input
+            type="text"
+            name="pan"
+            value={formData.pan}
+            onChange={handleInputChange}
+            required
+            pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
+            title="Enter a valid PAN number"
+          />
+        </div>
+        <div className="signup-grid">
+          <div className="form-group">
+            <label>Date of Birth</label>
+            <input
+              type="date"
+              name="dob"
+              value={dateForInput}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Age</label>
+            <input
+              type="number"
+              name="age"
+              value={formData.age}
+              onChange={handleInputChange}
+              required
+              min="18"
+            />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Gender</label>
+          <select
+            name="gender"
+            value={formData.gender}
+            onChange={handleInputChange}
+            required
+          >
+            <option value="">Select...</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Enter CAPTCHA</label>
+          <Captcha onCaptchaChange={setGeneratedCaptcha} />
+          <input
+            type="text"
+            value={captchaInput}
+            onChange={(e) => setCaptchaInput(e.target.value)}
+            required
+            style={{ marginTop: "0.5rem" }}
+          />
+        </div>
+        <button
+          className="primary-button"
+          type="submit"
+          style={{ width: "100%" }}
+        >
+          Create Account
+        </button>
+      </form>
+      <p
+        style={{
+          textAlign: "center",
+          marginTop: "1.5rem",
+          color: "var(--text-light)",
+        }}
+      >
+        Already have an account?{" "}
+        <span
+          onClick={onSwitchToLogin}
+          style={{
+            color: "var(--primary-purple)",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Login
+        </span>
+      </p>
+    </>
+  );
 };
 
 const AuthSection = ({ onLoginSuccess }) => {
-  // This is the full, unabridged component
   const [isLogin, setIsLogin] = useState(true);
   const CheckmarkIcon = () => (
     <svg
@@ -214,6 +468,11 @@ const AuthSection = ({ onLoginSuccess }) => {
       <div className="page-container">
         <div className="auth-section-card">
           <div className="auth-content">
+            <img
+              src="https://images.unsplash.com/photo-1581092165412-03319021e3d3?q=80&w=2574&auto=format&fit=crop"
+              alt="Abstract tech background"
+              className="auth-background-image"
+            />
             <div
               key={isLogin ? "login" : "signup"}
               className="auth-content-inner"
@@ -221,14 +480,17 @@ const AuthSection = ({ onLoginSuccess }) => {
               {isLogin ? (
                 <>
                   <h2>Welcome Back</h2>
-                  <p>Log in to access your secure dashboard.</p>
+                  <p>
+                    Log in to access your secure dashboard and continue your
+                    journey with Edura AI.
+                  </p>
                 </>
               ) : (
                 <>
                   <h2>Join the Future</h2>
                   <p>
                     Create an account to experience the next generation of
-                    security.
+                    application security.
                   </p>
                   <ul>
                     <li>
@@ -236,6 +498,9 @@ const AuthSection = ({ onLoginSuccess }) => {
                     </li>
                     <li>
                       <CheckmarkIcon /> Real-Time Analysis
+                    </li>
+                    <li>
+                      <CheckmarkIcon /> Transparent Decisions
                     </li>
                   </ul>
                 </>
@@ -266,20 +531,51 @@ const AuthSection = ({ onLoginSuccess }) => {
   );
 };
 
+// =================================================================================
+// 3. DASHBOARD COMPONENTS
+// =================================================================================
 const DocumentVerification = ({ user, onVerificationSuccess }) => {
-  // This is the full, unabridged component
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [verificationResult, setVerificationResult] = useState(null);
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setVerificationResult(null);
+    }
+  };
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setIsDragActive(true);
+    } else if (e.type === "dragleave") {
+      setIsDragActive(false);
+    }
+  };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setFile(e.dataTransfer.files[0]);
+      setVerificationResult(null);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
-      setStatusMessage("Please select a file.");
+      setStatusMessage("Please select a file to upload.");
       return;
     }
     setIsUploading(true);
-    setStatusMessage("Analyzing document...");
+    setStatusMessage(
+      "Uploading and analyzing document... This may take a moment."
+    );
     setVerificationResult(null);
     const formData = new FormData();
     formData.append("document", file);
@@ -293,8 +589,9 @@ const DocumentVerification = ({ user, onVerificationSuccess }) => {
       setStatusMessage(data.message);
       setVerificationResult(data);
     } catch (err) {
-      setStatusMessage(`Error: ${err.message}`);
-      setVerificationResult({ isVerified: false, comparison: [] });
+      setStatusMessage(`Error: Could not connect to the verification service.`);
+      const failureReport = { isVerified: false, comparison: [] };
+      setVerificationResult(failureReport);
     } finally {
       setIsUploading(false);
     }
@@ -302,7 +599,7 @@ const DocumentVerification = ({ user, onVerificationSuccess }) => {
   const MatchStatus = ({ item }) => {
     let text = "✗ Mismatch";
     let className = "mismatch";
-    if (item.extracted.includes("Failed")) {
+    if (item.extracted.includes("Failed") || item.extracted.includes("Error")) {
       text = "⚠️ Error";
       className = "error";
     } else if (item.match) {
@@ -319,19 +616,32 @@ const DocumentVerification = ({ user, onVerificationSuccess }) => {
         details.
       </p>
       <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label htmlFor="document-upload" className="file-upload-label">
-            {file ? file.name : "Browse File"}
-          </label>
+        <div
+          className={`file-upload-wrapper ${isDragActive ? "active" : ""}`}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
           <input
             type="file"
             id="document-upload"
             accept="application/pdf"
-            onChange={(e) => setFile(e.target.files[0])}
+            onChange={handleFileChange}
             style={{ display: "none" }}
           />
+          <p>Drag & Drop your PDF here, or</p>
+          <label htmlFor="document-upload" className="file-upload-label">
+            Browse File
+          </label>
+          {file && <p className="file-name">{file.name}</p>}
         </div>
-        <button type="submit" className="primary-button" disabled={isUploading}>
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={isUploading}
+          style={{ marginTop: "1.5rem", width: "100%" }}
+        >
           {isUploading ? "Verifying..." : "Start Verification"}
         </button>
       </form>
@@ -348,7 +658,7 @@ const DocumentVerification = ({ user, onVerificationSuccess }) => {
           {statusMessage}
         </div>
       )}
-      {verificationResult && (
+      {verificationResult && Array.isArray(verificationResult.comparison) && (
         <div className="table-wrapper">
           <table className="comparison-table">
             <thead>
@@ -388,7 +698,6 @@ const DocumentVerification = ({ user, onVerificationSuccess }) => {
 };
 
 const LoanApplicationForm = ({ user, onApplicationSuccess }) => {
-  // This is the full, unabridged component
   const [loanData, setLoanData] = useState({
     loanAmount: "",
     courseName: "",
@@ -403,10 +712,22 @@ const LoanApplicationForm = ({ user, onApplicationSuccess }) => {
     e.preventDefault();
     setIsSubmitting(true);
     setStatusMessage("Submitting application...");
-    setTimeout(() => {
-      setStatusMessage("Application submitted successfully!");
+    const formData = new FormData();
+    formData.append("userId", user.userId);
+    formData.append("loanData", JSON.stringify(loanData));
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/loan/submit`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Submission failed");
+      setStatusMessage(data.message);
       setTimeout(() => onApplicationSuccess(), 2000);
-    }, 1500);
+    } catch (err) {
+      setStatusMessage(`Error: ${err.message}`);
+      setIsSubmitting(false);
+    }
   };
   return (
     <div className="loan-form-card animate-fade-in-up">
@@ -502,7 +823,7 @@ const ApplicationSubmitted = () => (
 );
 
 const StudentDashboard = ({ user }) => {
-  const [flowStep, setFlowStep] = useState("verification");
+  const [flowStep, setFlowStep] = useState("verification"); // verification, loadingNext, form, submitted
   const handleIdVerificationSuccess = () => {
     setFlowStep("loadingNext");
     setTimeout(() => setFlowStep("form"), 2500);
@@ -533,21 +854,19 @@ const StudentDashboard = ({ user }) => {
     </div>
   );
 };
-
-const LoanOfficerDashboard = ({ officer }) => {
-  // This is the full, unabridged component
-  return (
-    <div className="dashboard animate-fade-in-up">
-      <div className="dashboard-header">
-        <h2>Officer Dashboard</h2>
-        <p>Welcome, {officer.fullName}.</p>
-      </div>
+const LoanOfficerDashboard = () => (
+  <div className="dashboard animate-fade-in-up">
+    <div className="dashboard-header">
+      <h2>Officer Dashboard</h2>
+      <p>
+        This is a placeholder for the officer dashboard. In a real app, it would
+        show all user activities and verification results.
+      </p>
     </div>
-  );
-};
-
+  </div>
+);
 const Dashboard = ({ user }) => {
-  if (user.role === "officer") return <LoanOfficerDashboard officer={user} />;
+  if (user.role === "officer") return <LoanOfficerDashboard />;
   return <StudentDashboard user={user} />;
 };
 
